@@ -65,7 +65,7 @@ public class NethpotxpClient implements ClientModInitializer {
             boolean legsOn   = !client.player.getEquippedStack(EquipmentSlot.LEGS).isEmpty();
             boolean bootsOn  = !client.player.getEquippedStack(EquipmentSlot.FEET).isEmpty();
 
-            // Hiç zırh takılı değilse envanterden takt
+            // Hiç zırh takılı değilse envanterden tak
             if (!helmetOn && !chestOn && !legsOn && !bootsOn) {
                 if (equipArmorFromInventory(client)) {
                     actionDelay = 4;
@@ -126,10 +126,10 @@ public class NethpotxpClient implements ClientModInitializer {
                 }
             }
 
-            // XP şişesi bul ve kullan
+            // XP şişesi bul ve kullan (Sıcak çubuktaki 0-8 slotları)
             int xpSlot = -1;
             for (int i = 0; i < 9; i++) {
-                if (client.player.getInventory().getSlot(i).getStack().getItem() == Items.EXPERIENCE_BOTTLE) {
+                if (client.player.getInventory().getStack(i).getItem() == Items.EXPERIENCE_BOTTLE) {
                     xpSlot = i;
                     break;
                 }
@@ -156,9 +156,8 @@ public class NethpotxpClient implements ClientModInitializer {
         );
     }
 
-    // Envanterden zırh tak (slot 9-35 = ana envanter)
+    // Envanterden zırh tak (slot 9-44 = oyuncu envanteri)
     private boolean equipArmorFromInventory(MinecraftClient client) {
-        // playerScreenHandler'da slot 9-44 arası envanter
         for (int i = 9; i <= 44; i++) {
             ItemStack stack = client.player.playerScreenHandler.getSlot(i).getStack();
             if (stack.getItem() instanceof ArmorItem armor) {

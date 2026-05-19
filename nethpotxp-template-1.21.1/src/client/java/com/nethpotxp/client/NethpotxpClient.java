@@ -1,4 +1,4 @@
-package com.example.client;
+package com.nethpotxp.client;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -15,7 +15,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import org.lwjgl.glfw.GLFW;
 
-public class ExampleModClient implements ClientModInitializer {
+public class NethpotxpClient implements ClientModInitializer {
 
     private static KeyBinding toggleKey;
     private boolean isRunning = false;
@@ -129,7 +129,7 @@ public class ExampleModClient implements ClientModInitializer {
             // XP şişesi bul ve kullan
             int xpSlot = -1;
             for (int i = 0; i < 9; i++) {
-                if (client.player.getInventory().getStack(i).getItem() == Items.EXPERIENCE_BOTTLE) {
+                if (client.player.getInventory().getSlot(i).getStack().getItem() == Items.EXPERIENCE_BOTTLE) {
                     xpSlot = i;
                     break;
                 }

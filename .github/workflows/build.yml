@@ -12,11 +12,11 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
       - name: Make gradlew executable
-  run: chmod +x ./nethpotxp-template-1.21.1/gradlew
-- name: Build
-  run: cd nethpotxp-template-1.21.1 && ./gradlew build
-- name: Upload JAR
-  uses: actions/upload-artifact@v4
-  with:
-    name: mod-jar
-    path: nethpotxp-template-1.21.1/build/libs/*.jar
+        run: chmod +x ./nethpotxp-template-1.21.1/gradlew
+      - name: Build
+        run: cd nethpotxp-template-1.21.1 && ./gradlew build
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-jar
+          path: nethpotxp-template-1.21.1/build/libs/*.jar

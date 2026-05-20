@@ -23,11 +23,7 @@
 		]
 	},
 	"mixins": [
-		"nethpotxp.mixins.json",
-		{
-			"config": "nethpotxp.client.mixins.json",
-			"environment": "client"
-		}
+		"nethpotxp.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.19.2",

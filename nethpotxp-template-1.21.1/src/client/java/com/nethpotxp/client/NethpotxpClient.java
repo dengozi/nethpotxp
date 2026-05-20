@@ -27,6 +27,8 @@ public class NethpotxpClient implements ClientModInitializer {
     private static final int LEGS_SLOT = 7;
     private static final int BOOTS_SLOT = 8;
 
+    private static final int TARGET_DURABILITY = 400;
+
     @Override
     public void onInitializeClient() {
         toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -42,7 +44,7 @@ public class NethpotxpClient implements ClientModInitializer {
             while (toggleKey.wasPressed()) {
                 isRunning = !isRunning;
                 client.player.sendMessage(Text.of(
-                        isRunning ? "§a[XP] Aktif! (Hedef: En Yüksek Can)" : "§c[XP] Kapatıldı!"
+                        isRunning ? "§a[XP] Aktif! (Sabit 400 Can v2)" : "§c[XP] Kapatıldı!"
                 ), true);
                 actionDelay = 0;
             }
@@ -54,15 +56,7 @@ public class NethpotxpClient implements ClientModInitializer {
                 return;
             }
 
-            // 1. ADIM: Eksik zırh varsa önce envanterden geri giy (Set bütünlüğü için)
-            if (hasArmorInInventoryToEquip(client)) {
-                if (equipArmorFromInventory(client)) {
-                    actionDelay = 4;
-                    return;
-                }
-            }
-
-            // Tüm parçaların anlık can sayılarını alıyoruz
+            // Üstümüzdeki zırhların net kalan can sayılarını alıyoruz
             int helmetDura = getExactDurability(client, EquipmentSlot.HEAD);
             int chestDura  = getExactDurability(client, EquipmentSlot.CHEST);
             int legsDura   = getExactDurability(client, EquipmentSlot.LEGS);
@@ -73,47 +67,47 @@ public class NethpotxpClient implements ClientModInitializer {
             boolean legsOn   = !client.player.getEquippedStack(EquipmentSlot.LEGS).isEmpty();
             boolean bootsOn  = !client.player.getEquippedStack(EquipmentSlot.FEET).isEmpty();
 
-            // KURAL: Eğer tüm parçalar zaten fulllendiyse makroyu kapat
-            if (helmetDura >= 405 && chestDura >= 590 && legsDura >= 552 && bootsDura >= 478) {
-                client.player.sendMessage(Text.of("§b[XP] Tüm set tamamen tamir edildi!"), true);
-                isRunning = false;
-                return;
-            }
-
-            // 2. ADIM: HEDEF BELİRLEME (Senin istediğin mantık)
-            // Üzerimizdeki veya envanterdeki zırhlar içindeki EN YÜKSEK canı buluyoruz (Örn: 100)
-            int targetMaxDura = 0;
-            if (helmetOn && helmetDura < 405) targetMaxDura = Math.max(targetMaxDura, helmetDura);
-            if (chestOn && chestDura < 590)   targetMaxDura = Math.max(targetMaxDura, chestDura);
-            if (legsOn && legsDura < 552)     targetMaxDura = Math.max(targetMaxDura, legsDura);
-            if (bootsOn && bootsDura < 478)   targetMaxDura = Math.max(targetMaxDura, bootsDura);
-
-            // 3. ADIM: AYIKLAMA MEKANİZMASI
-            // Eğer bir zırhın canı, hedeflediğimiz en yüksek candan fazlaysa (Tolerans: 15), onu ÇIKAR!
-            // Böylece o zırh boşa XP emmeyecek, sadece canı az olanlar üstümüzde kalacak.
-            int tolerance = 15;
+            // 1. ADIM: AYIKLAMA (Canı 400 ve üzeri olan zırhı ANINDA ÇIKAR)
+            // Hiçbir esneme payı bırakmıyoruz, 400'ü gördüğü an envantere gidecek.
             boolean armorRemoved = false;
 
-            if (helmetOn && helmetDura > targetMaxDura + tolerance) {
+            if (helmetOn && helmetDura >= TARGET_DURABILITY) {
                 clickSlot(client, HELMET_SLOT);
                 armorRemoved = true;
-            } else if (chestOn && chestDura > targetMaxDura + tolerance) {
+            } else if (chestOn && chestDura >= TARGET_DURABILITY) {
                 clickSlot(client, CHEST_SLOT);
                 armorRemoved = true;
-            } else if (legsOn && legsDura > targetMaxDura + tolerance) {
+            } else if (legsOn && legsDura >= TARGET_DURABILITY) {
                 clickSlot(client, LEGS_SLOT);
                 armorRemoved = true;
-            } else if (bootsOn && bootsDura > targetMaxDura + tolerance) {
+            } else if (bootsOn && bootsDura >= TARGET_DURABILITY) {
                 clickSlot(client, BOOTS_SLOT);
                 armorRemoved = true;
             }
 
             if (armorRemoved) {
-                actionDelay = 4; // Sunucuya zırhı düşürmesi için süre ver
+                actionDelay = 4; // Paketlerin karışmaması için bekleme süresi
                 return;
             }
 
-            // 4. ADIM: OTO POT ATMA (Sadece canı az olan zırhlar üstümüzde kaldığında tetiklenir)
+            // 2. ADIM: GERİ GİYME (Envanterde canı hala 400'den küçük bir zırh kalmışsa onu geri tak)
+            if (hasArmorInInventoryToEquip(client)) {
+                if (equipArmorFromInventory(client)) {
+                    actionDelay = 4;
+                    return;
+                }
+            }
+
+            // KURAL: Eğer üstümüzde zırh kalmadıysa VE envanterde de 400'den küçük zırh kalmadıysa iş bitmiştir!
+            if (!helmetOn && !chestOn && !legsOn && !bootsOn && !hasArmorInInventoryToEquip(client)) {
+                // Kapatmadan önce envanterdeki tüm fullenmiş (400+) zırhları geri üstümüze giydiriyoruz
+                equipAllArmorFinal(client);
+                client.player.sendMessage(Text.of("§b[XP] Bütün set tıkır tıkır 400 cana eşitlendi!"), true);
+                isRunning = false;
+                return;
+            }
+
+            // 3. ADIM: OTO POT ATMA (Sadece canı 400'ün altında zırhlar üstümüzde kaldıysa fırlatır)
             int xpSlot = -1;
             for (int i = 0; i < 9; i++) {
                 if (client.player.getInventory().getStack(i).getItem() == Items.EXPERIENCE_BOTTLE) {
@@ -128,19 +122,17 @@ public class NethpotxpClient implements ClientModInitializer {
                 return;
             }
 
-            // Sunucu paketli güvenli el değiştirme
+            // Ghost item engelleyici güvenli atış paketleri
             int originalSlot = client.player.getInventory().selectedSlot;
             client.player.getInventory().selectedSlot = xpSlot;
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(xpSlot));
             
-            // Fırlat
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
             
-            // Eski eşyaya geri dön
             client.player.getInventory().selectedSlot = originalSlot;
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(originalSlot));
             
-            actionDelay = 2; // Seri atış hızı
+            actionDelay = 2; // Sunucunun algılayacağı en stabil pot atma hızı
         });
     }
 
@@ -158,7 +150,10 @@ public class NethpotxpClient implements ClientModInitializer {
             ItemStack stack = client.player.playerScreenHandler.getSlot(i).getStack();
             if (stack.getItem() instanceof ArmorItem armor) {
                 EquipmentSlot targetSlot = armor.getSlotType();
-                if (client.player.getEquippedStack(targetSlot).isEmpty()) {
+                int currentDura = stack.getMaxDamage() - stack.getDamage();
+                
+                // Envanterdeki zırhın canı 400'den küçükse VE üstümüzdeki o slot boşsa giyilmesi GEREKİR
+                if (client.player.getEquippedStack(targetSlot).isEmpty() && currentDura < TARGET_DURABILITY) {
                     return true;
                 }
             }
@@ -172,13 +167,31 @@ public class NethpotxpClient implements ClientModInitializer {
             ItemStack stack = client.player.playerScreenHandler.getSlot(i).getStack();
             if (stack.getItem() instanceof ArmorItem armor) {
                 EquipmentSlot targetSlot = armor.getSlotType();
+                
                 if (!client.player.getEquippedStack(targetSlot).isEmpty()) continue;
+                
+                int currentDura = stack.getMaxDamage() - stack.getDamage();
+                if (currentDura >= TARGET_DURABILITY) continue; // 400 olmuşsa giyme, sırada beklesin
                 
                 clickSlot(client, i);
                 return true;
             }
         }
         return false;
+    }
+
+    // Makro tamamen bittiğinde 400+ olan tüm zırhları tek bir tick'te geri giydiren güvenli fonksiyon
+    private void equipAllArmorFinal(MinecraftClient client) {
+        if (client.player == null) return;
+        for (int i = 9; i <= 44; i++) {
+            ItemStack stack = client.player.playerScreenHandler.getSlot(i).getStack();
+            if (stack.getItem() instanceof ArmorItem armor) {
+                EquipmentSlot targetSlot = armor.getSlotType();
+                if (client.player.getEquippedStack(targetSlot).isEmpty()) {
+                    clickSlot(client, i);
+                }
+            }
+        }
     }
 
     private int getExactDurability(MinecraftClient client, EquipmentSlot slot) {

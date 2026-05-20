@@ -21,7 +21,6 @@ public class NethpotxpClient implements ClientModInitializer {
     private boolean isRunning = false;
     private int actionDelay = 0;
 
-    // Armor slot ID'leri playerScreenHandler'da
     private static final int HELMET_SLOT = 5;
     private static final int CHEST_SLOT = 6;
     private static final int LEGS_SLOT = 7;
@@ -49,12 +48,13 @@ public class NethpotxpClient implements ClientModInitializer {
 
             if (!isRunning) return;
 
+            // KESİN ÇÖZÜM: Gecikme varsa tick'i tamamen burada kesiyoruz!
             if (actionDelay > 0) {
                 actionDelay--;
                 return;
             }
 
-            // Zırh durumlarını al (sadece takılı olanlar)
+            // 1. Durum: Canları ve takılı olma durumlarını kontrol et
             double helmet = getArmorDurability(client, EquipmentSlot.HEAD);
             double chest  = getArmorDurability(client, EquipmentSlot.CHEST);
             double legs   = getArmorDurability(client, EquipmentSlot.LEGS);
@@ -65,18 +65,7 @@ public class NethpotxpClient implements ClientModInitializer {
             boolean legsOn   = !client.player.getEquippedStack(EquipmentSlot.LEGS).isEmpty();
             boolean bootsOn  = !client.player.getEquippedStack(EquipmentSlot.FEET).isEmpty();
 
-            // Hiç zırh takılı değilse envanterden tak
-            if (!helmetOn && !chestOn && !legsOn && !bootsOn) {
-                if (equipArmorFromInventory(client)) {
-                    actionDelay = 4;
-                    return;
-                }
-                client.player.sendMessage(Text.of("§c[XP] Envanterde zırh yok!"), true);
-                isRunning = false;
-                return;
-            }
-
-            // Sadece takılı zırhların min durability'sini hesapla
+            // Sadece takılı olanların min/max değerlerini bul
             double min = 1.0;
             if (helmetOn) min = Math.min(min, helmet);
             if (chestOn)  min = Math.min(min, chest);
@@ -89,44 +78,50 @@ public class NethpotxpClient implements ClientModInitializer {
             if (legsOn)   max = Math.max(max, legs);
             if (bootsOn)  max = Math.max(max, boots);
 
-            // Eşitlendi mi?
-            if ((max - min) <= 0.02) {
-                client.player.sendMessage(Text.of("§b[XP] Setler eşitlendi!"), true);
+            // Eğer tüm setler eşitlendiyse veya hepsi %100 olduysa kapat
+            if ((helmetOn || chestOn || legsOn || bootsOn) && (max - min) <= 0.03 && min > 0.95) {
+                // Eğer envanterde zırh kalmışsa önce hepsini geri giy
+                if (equipArmorFromInventory(client)) {
+                    actionDelay = 3;
+                    return;
+                }
+                client.player.sendMessage(Text.of("§b[XP] Setler eşitlendi ve giyildi!"), true);
                 isRunning = false;
                 return;
             }
 
-            // En yüksek durability'li zırhı çıkar (envantere at)
-            if (helmetOn && helmet > min + 0.02) {
+            // 2. Durum: Canı yüksek olan zırhı ÇIKAR
+            if (helmetOn && helmet > min + 0.05) {
                 clickSlot(client, HELMET_SLOT);
-                actionDelay = 3;
+                actionDelay = 3; // Çıkarma sonrası bekle
                 return;
             }
-            if (chestOn && chest > min + 0.02) {
+            if (chestOn && chest > min + 0.05) {
                 clickSlot(client, CHEST_SLOT);
                 actionDelay = 3;
                 return;
             }
-            if (legsOn && legs > min + 0.02) {
+            if (legsOn && legs > min + 0.05) {
                 clickSlot(client, LEGS_SLOT);
                 actionDelay = 3;
                 return;
             }
-            if (bootsOn && boots > min + 0.02) {
+            if (bootsOn && boots > min + 0.05) {
                 clickSlot(client, BOOTS_SLOT);
                 actionDelay = 3;
                 return;
             }
 
-            // Çıkarılan zırhı geri tak (envanterden)
+            // 3. Durum: Eğer canı az olan zırh kırıldıysa veya yanlışlıkla çıktıysa envanterden GERİ TAK
             if (!helmetOn || !chestOn || !legsOn || !bootsOn) {
+                // Sadece canı en az olan zırh kategorisi boşsa envanterden onu giymeye çalış
                 if (equipArmorFromInventory(client)) {
-                    actionDelay = 4;
+                    actionDelay = 3; // Giyme sonrası bekle
                     return;
                 }
             }
 
-            // XP şişesi bul ve kullan (Sıcak çubuktaki 0-8 slotları)
+            // 4. Durum: Her şey hazırsa XP ŞİŞESİ AT
             int xpSlot = -1;
             for (int i = 0; i < 9; i++) {
                 if (client.player.getInventory().getStack(i).getItem() == Items.EXPERIENCE_BOTTLE) {
@@ -141,29 +136,31 @@ public class NethpotxpClient implements ClientModInitializer {
                 return;
             }
 
-            int prev = client.player.getInventory().selectedSlot;
+            // El değiştirme hızını sunucunun yutmaması için delay koyduk
             client.player.getInventory().selectedSlot = xpSlot;
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.player.getInventory().selectedSlot = prev;
-            actionDelay = 2;
+            actionDelay = 2; // Pot atma hızı (Çok hızlı atıp sunucudan kick yememek için ideal)
         });
     }
 
     private void clickSlot(MinecraftClient client, int slotId) {
+        if (client.interactionManager == null || client.player == null) return;
         client.interactionManager.clickSlot(
                 client.player.playerScreenHandler.syncId,
                 slotId, 0, SlotActionType.QUICK_MOVE, client.player
         );
     }
 
-    // Envanterden zırh tak (slot 9-44 = oyuncu envanteri)
     private boolean equipArmorFromInventory(MinecraftClient client) {
+        if (client.player == null) return false;
+        // 9'dan 44'e kadar envanteri tara
         for (int i = 9; i <= 44; i++) {
             ItemStack stack = client.player.playerScreenHandler.getSlot(i).getStack();
             if (stack.getItem() instanceof ArmorItem armor) {
                 EquipmentSlot targetSlot = armor.getSlotType();
-                // O slot zaten doluysa atla
+                // Eğer o zırh slotu zaten doluysa envanterdeki bu zırhı giyme
                 if (!client.player.getEquippedStack(targetSlot).isEmpty()) continue;
+                
                 clickSlot(client, i);
                 return true;
             }

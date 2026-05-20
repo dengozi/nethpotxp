@@ -29,6 +29,10 @@ public class NethpotxpClient implements ClientModInitializer {
 
     private static final int TARGET_DURABILITY = 400;
 
+    // BYPASS AYARLARI: Tamamen insansı (legit) hareket süreleri
+    private int potThrowStep = 0; // 0: Hazır, 1: Eline aldı bekliyor, 2: Attı dönecek
+    private int savedOriginalSlot = -1;
+
     @Override
     public void onInitializeClient() {
         toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -44,13 +48,15 @@ public class NethpotxpClient implements ClientModInitializer {
             while (toggleKey.wasPressed()) {
                 isRunning = !isRunning;
                 client.player.sendMessage(Text.of(
-                        isRunning ? "§a[XP] Aktif! (Sabit 400 Can v2)" : "§c[XP] Kapatıldı!"
+                        isRunning ? "§a[XP] Aktif! (Bypass Modu)" : "§c[XP] Kapatıldı!"
                 ), true);
                 actionDelay = 0;
+                potThrowStep = 0;
             }
 
             if (!isRunning) return;
 
+            // Eğer bir işlem sonrası bekleme süresindeysek tick'i tamamen kes
             if (actionDelay > 0) {
                 actionDelay--;
                 return;
@@ -68,7 +74,6 @@ public class NethpotxpClient implements ClientModInitializer {
             boolean bootsOn  = !client.player.getEquippedStack(EquipmentSlot.FEET).isEmpty();
 
             // 1. ADIM: AYIKLAMA (Canı 400 ve üzeri olan zırhı ANINDA ÇIKAR)
-            // Hiçbir esneme payı bırakmıyoruz, 400'ü gördüğü an envantere gidecek.
             boolean armorRemoved = false;
 
             if (helmetOn && helmetDura >= TARGET_DURABILITY) {
@@ -86,28 +91,27 @@ public class NethpotxpClient implements ClientModInitializer {
             }
 
             if (armorRemoved) {
-                actionDelay = 4; // Paketlerin karışmaması için bekleme süresi
+                actionDelay = 5; // Sunucuya zırh düşürme süresi (Biraz artırdık ki paketler çakışmasın)
                 return;
             }
 
             // 2. ADIM: GERİ GİYME (Envanterde canı hala 400'den küçük bir zırh kalmışsa onu geri tak)
             if (hasArmorInInventoryToEquip(client)) {
                 if (equipArmorFromInventory(client)) {
-                    actionDelay = 4;
+                    actionDelay = 5;
                     return;
                 }
             }
 
-            // KURAL: Eğer üstümüzde zırh kalmadıysa VE envanterde de 400'den küçük zırh kalmadıysa iş bitmiştir!
+            // KURAL: Eğer iş bittiyse kapat
             if (!helmetOn && !chestOn && !legsOn && !bootsOn && !hasArmorInInventoryToEquip(client)) {
-                // Kapatmadan önce envanterdeki tüm fullenmiş (400+) zırhları geri üstümüze giydiriyoruz
                 equipAllArmorFinal(client);
-                client.player.sendMessage(Text.of("§b[XP] Bütün set tıkır tıkır 400 cana eşitlendi!"), true);
+                client.player.sendMessage(Text.of("§b[XP] Setler güvenle 400 cana eşitlendi!"), true);
                 isRunning = false;
                 return;
             }
 
-            // 3. ADIM: OTO POT ATMA (Sadece canı 400'ün altında zırhlar üstümüzde kaldıysa fırlatır)
+            // 3. ADIM: BYPASS'LI OTO POT ATMA (Sıralı ve Gecikmeli El Değiştirme)
             int xpSlot = -1;
             for (int i = 0; i < 9; i++) {
                 if (client.player.getInventory().getStack(i).getItem() == Items.EXPERIENCE_BOTTLE) {
@@ -122,17 +126,37 @@ public class NethpotxpClient implements ClientModInitializer {
                 return;
             }
 
-            // Ghost item engelleyici güvenli atış paketleri
-            int originalSlot = client.player.getInventory().selectedSlot;
-            client.player.getInventory().selectedSlot = xpSlot;
-            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(xpSlot));
+            // İnsansı Atış Döngüsü (Aynı tick içinde her şeyi yapıp ban yemeyi engeller)
+            if (potThrowStep == 0) {
+                // Aşama 1: Sadece eline potu al ve sunucuya bildir. Bu tick'te BAŞKA HİÇBİR ŞEY YAPMA.
+                savedOriginalSlot = client.player.getInventory().selectedSlot;
+                client.player.getInventory().selectedSlot = xpSlot;
+                client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(xpSlot));
+                
+                potThrowStep = 1;
+                actionDelay = 1; // 1 tick (50ms) elinde potu tutarak bekle (Legit görünüm)
+                return;
+            } 
             
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            if (potThrowStep == 1) {
+                // Aşama 2: Elinde halihazırda pot var, şimdi fırlat.
+                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                
+                potThrowStep = 2;
+                actionDelay = 2; // Fırlattıktan sonra sunucunun paketi yutması için 2 tick bekle
+                return;
+            } 
             
-            client.player.getInventory().selectedSlot = originalSlot;
-            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(originalSlot));
-            
-            actionDelay = 2; // Sunucunun algılayacağı en stabil pot atma hızı
+            if (potThrowStep == 2) {
+                // Aşama 3: Artık eski elindeki silaha/eşyaya güvenle geri dönebilirsin.
+                if (savedOriginalSlot != -1) {
+                    client.player.getInventory().selectedSlot = savedOriginalSlot;
+                    client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(savedOriginalSlot));
+                }
+                
+                potThrowStep = 0; // Döngüyü sıfırla
+                actionDelay = 3;  // İki pot atışı arasına insansı bir boşluk koy (Saniyede max 3-4 pot)
+            }
         });
     }
 
@@ -151,8 +175,6 @@ public class NethpotxpClient implements ClientModInitializer {
             if (stack.getItem() instanceof ArmorItem armor) {
                 EquipmentSlot targetSlot = armor.getSlotType();
                 int currentDura = stack.getMaxDamage() - stack.getDamage();
-                
-                // Envanterdeki zırhın canı 400'den küçükse VE üstümüzdeki o slot boşsa giyilmesi GEREKİR
                 if (client.player.getEquippedStack(targetSlot).isEmpty() && currentDura < TARGET_DURABILITY) {
                     return true;
                 }
@@ -167,12 +189,9 @@ public class NethpotxpClient implements ClientModInitializer {
             ItemStack stack = client.player.playerScreenHandler.getSlot(i).getStack();
             if (stack.getItem() instanceof ArmorItem armor) {
                 EquipmentSlot targetSlot = armor.getSlotType();
-                
                 if (!client.player.getEquippedStack(targetSlot).isEmpty()) continue;
-                
                 int currentDura = stack.getMaxDamage() - stack.getDamage();
-                if (currentDura >= TARGET_DURABILITY) continue; // 400 olmuşsa giyme, sırada beklesin
-                
+                if (currentDura >= TARGET_DURABILITY) continue;
                 clickSlot(client, i);
                 return true;
             }
@@ -180,7 +199,6 @@ public class NethpotxpClient implements ClientModInitializer {
         return false;
     }
 
-    // Makro tamamen bittiğinde 400+ olan tüm zırhları tek bir tick'te geri giydiren güvenli fonksiyon
     private void equipAllArmorFinal(MinecraftClient client) {
         if (client.player == null) return;
         for (int i = 9; i <= 44; i++) {
